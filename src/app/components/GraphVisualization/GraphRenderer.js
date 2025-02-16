@@ -2,30 +2,31 @@
 import { useEffect, useRef } from 'react';
 import Sigma from 'sigma';
 import Graph from 'graphology';
-import RBush from 'rbush';
 
 const GraphRenderer = ({ containerId, data }) => {
   const graphRef = useRef(null);
   const rendererRef = useRef(null);
-  const quadtreeRef = useRef(null);
-  const workerRef = useRef(null);
 
   useEffect(() => {
     // Initialize graph
     const graph = new Graph();
     graphRef.current = graph;
 
-    // Initialize RBush tree
-    quadtreeRef.current = new RBush();
-
-    // Custom WebGL settings
+    // Enhanced WebGL settings
     const settings = {
       renderEdges: true,
       defaultNodeColor: '#4299E1',
       defaultEdgeColor: '#CBD5E0',
-      defaultNodeSize: 5,
-      minCameraRatio: 0.1,
-      maxCameraRatio: 10,
+      defaultNodeSize: 3,
+      minCameraRatio: 0.05,  // Allow closer zoom
+      maxCameraRatio: 30,    // Allow further zoom out
+      labelSize: 14,
+      labelWeight: 'normal',
+      defaultEdgeType: 'line',
+      allowInvalidContainer: true,
+      hideEdgesOnMove: false,  // Keep edges visible during movement
+      nodeReducer: null,       // Prevent node filtering
+      edgeReducer: null,       // Prevent edge filtering
       webglOpts: {
         antialias: true,
         preserveDrawingBuffer: false
@@ -35,121 +36,85 @@ const GraphRenderer = ({ containerId, data }) => {
     // Initialize sigma renderer
     const container = document.getElementById(containerId);
     if (container) {
+      // Ensure container has dimensions
+      const resizeObserver = new ResizeObserver(() => {
+        if (rendererRef.current) {
+          rendererRef.current.refresh();
+        }
+      });
+      
+      resizeObserver.observe(container);
+      
+      // Create Sigma instance
       rendererRef.current = new Sigma(graph, container, settings);
 
-      // Setup camera move handler
-      rendererRef.current.getCamera().on('updated', handleCameraMove);
-    }
-
-    // Add nodes and edges
-    if (data?.nodes) {
-      addNodesAndEdges(data);
-    }
-
-    // Cleanup
-    return () => {
-      if (rendererRef.current) {
-        rendererRef.current.kill();
+      // Add nodes and edges
+      if (data?.nodes) {
+        addNodesAndEdges(data);
       }
-      if (workerRef.current) {
-        workerRef.current.terminate();
-      }
-      cleanupUnusedNodes();
-    };
+
+      // Cleanup
+      return () => {
+        resizeObserver.disconnect();
+        if (rendererRef.current) {
+          rendererRef.current.kill();
+        }
+      };
+    }
   }, [containerId, data]);
 
-  const handleCameraMove = () => {
-    if (!rendererRef.current || !graphRef.current || !quadtreeRef.current) return;
-
-    const camera = rendererRef.current.getCamera();
-    const { x, y } = camera.getState();
-    const ratio = camera.getState().ratio;
-    const viewportDimensions = rendererRef.current.getDimensions();
-    
-    // Calculate viewport bounds
-    const viewport = {
-      x: {
-        min: x - (viewportDimensions.width * ratio) / 2,
-        max: x + (viewportDimensions.width * ratio) / 2
-      },
-      y: {
-        min: y - (viewportDimensions.height * ratio) / 2,
-        max: y + (viewportDimensions.height * ratio) / 2
-      }
-    };
-
-    const visibleNodes = quadtreeRef.current.search({
-      minX: viewport.x.min,
-      minY: viewport.y.min,
-      maxX: viewport.x.max,
-      maxY: viewport.y.max
-    }).map(item => item.id);
-
-    // Update visible nodes
-    graphRef.current.forEachNode((node, attr) => {
-      graphRef.current.setNodeAttribute(node, 'hidden', !visibleNodes.includes(node));
-    });
-  };
-
   const addNodesAndEdges = (data) => {
+    // Calculate bounds
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+
     // Add nodes
     data.nodes.forEach(node => {
       graphRef.current.addNode(node.id, {
         x: node.x,
         y: node.y,
-        size: node.size || 5,
-        color: node.color || '#4299E1'
+        size: node.size || 3,
+        color: node.color || '#4299E1',
+        hidden: false  // Ensure nodes are never hidden
       });
 
-      quadtreeRef.current.insert({
-        minX: node.x,
-        minY: node.y,
-        maxX: node.x,
-        maxY: node.y,
-        id: node.id
-      });
+      // Update bounds
+      minX = Math.min(minX, node.x);
+      maxX = Math.max(maxX, node.x);
+      minY = Math.min(minY, node.y);
+      maxY = Math.max(maxY, node.y);
     });
 
     // Add edges
     data.edges.forEach(edge => {
       if (!graphRef.current.hasEdge(edge.source, edge.target)) {
-        graphRef.current.addEdge(edge.source, edge.target);
-      }
-    });
-
-    // Center the camera
-    if (rendererRef.current) {
-      rendererRef.current.getCamera().animate({ x: 0, y: 0, ratio: 1 }, {
-        duration: 1000
-      });
-    }
-  };
-
-  const cleanupUnusedNodes = () => {
-    if (!rendererRef.current || !graphRef.current || !quadtreeRef.current) return;
-
-    const camera = rendererRef.current.getCamera();
-    const { x, y, ratio } = camera.getState();
-    const dimensions = rendererRef.current.getDimensions();
-    const margin = Math.max(dimensions.width, dimensions.height) * ratio * 0.5;
-
-    graphRef.current.forEachNode((node, attr) => {
-      if (
-        attr.x < x - margin ||
-        attr.x > x + margin ||
-        attr.y < y - margin ||
-        attr.y > y + margin
-      ) {
-        graphRef.current.dropNode(node);
-        quadtreeRef.current.remove({
-          minX: attr.x,
-          minY: attr.y,
-          maxX: attr.x,
-          maxY: attr.y,
-          id: node
+        graphRef.current.addEdge(edge.source, edge.target, {
+          hidden: false  // Ensure edges are never hidden
         });
       }
     });
+
+    // Center and zoom the camera to fit all nodes
+    if (rendererRef.current) {
+      const camera = rendererRef.current.getCamera();
+      const padding = 1.2; // 20% padding
+      
+      const graphWidth = maxX - minX;
+      const graphHeight = maxY - minY;
+      const graphCenter = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+      
+      const { width, height } = rendererRef.current.getDimensions();
+      const scale = Math.min(width / (graphWidth * padding), height / (graphHeight * padding));
+      
+      camera.animate({
+        x: graphCenter.x,
+        y: graphCenter.y,
+        ratio: 1 / scale,
+        angle: 0
+      }, {
+        duration: 1000
+      });
+    }
   };
 
   return null; // Sigma handles the rendering

@@ -1,7 +1,8 @@
+'use client';
+
 import React, { useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 
-// Dynamically import the GraphRenderer to avoid SSR
 const GraphRenderer = dynamic(() => import('./GraphRenderer'), {
   ssr: false,
   loading: () => (
@@ -13,14 +14,13 @@ const GraphRenderer = dynamic(() => import('./GraphRenderer'), {
 
 const GraphVisualization = ({ data }) => {
   const containerRef = useRef(null);
-  const [isClient, setIsClient] = React.useState(false);
+  const [mounted, setMounted] = React.useState(false);
 
   useEffect(() => {
-    setIsClient(true);
+    setMounted(true);
   }, []);
 
-  // Return a stable container while maintaining SSR compatibility
-  if (!isClient) {
+  if (!mounted) {
     return (
       <div 
         ref={containerRef}
