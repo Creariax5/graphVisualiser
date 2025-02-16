@@ -18,7 +18,7 @@ const GraphRenderer = ({ containerId, data }) => {
       defaultNodeColor: '#4299E1',
       defaultEdgeColor: '#CBD5E0',
       defaultNodeSize: 3,
-      minCameraRatio: 0.05,  // Allow closer zoom
+      minCameraRatio: 0.005,  // Allow closer zoom
       maxCameraRatio: 30,    // Allow further zoom out
       labelSize: 14,
       labelWeight: 'normal',

@@ -1,4 +1,3 @@
-// ClientGraph.js
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -29,7 +28,7 @@ export default function ClientGraph() {
 
   const generateRandomPosition = () => {
     // Increased bounds for better spread with large number of nodes
-    const bounds = 1000;
+    const bounds = 100000;
     return {
       x: _.random(-bounds, bounds),
       y: _.random(-bounds, bounds)
@@ -51,7 +50,7 @@ export default function ClientGraph() {
       const chunk = _.range(i, Math.min(i + chunkSize, count)).map(index => ({
         id: String(index + 1),
         ...generateRandomPosition(),
-        size: 3, // Smaller node size for better performance
+        size: 1, // Smaller node size for better performance
         color: '#4299E1'
       }));
       nodes.push(...chunk);
